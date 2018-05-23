@@ -295,6 +295,8 @@ void SimPFProducer::produce(edm::StreamID, edm::Event& evt, const edm::EventSetu
     
     if (useTiming_) candidate.setTime( (*trackTimeH)[tkRef], (*trackTimeErrH)[tkRef] );
     
+    double cluster_energy_raw=0;
+    double cluster_energy_corr=0;
     // bind to cluster if there is one and try to gather conversions, etc
     for( const auto& match : matches ) {      
       uint64_t hash = hashSimInfo(*(match.first));
@@ -309,6 +311,9 @@ void SimPFProducer::produce(edm::StreamID, edm::Event& evt, const edm::EventSetu
 	    edm::Ref<reco::PFBlockCollection> blockRef(blocksHandle,block);
 	    candidate.addElementInBlock(blockRef,blockIdx);
 	    usedSimCluster[simcHash] = true;
+            edm::Ref<std::vector<reco::PFCluster> > clusterRef(SimClustersH,simCluster2Block.find(simcHash)->first);
+            cluster_energy_raw+=clusterRef->energy();
+            cluster_energy_corr+=clusterRef->correctedEnergy();
 	  }
 	}
 	if( absPdgId == 11 ) { // collect brems/conv. brems
@@ -322,6 +327,8 @@ void SimPFProducer::produce(edm::StreamID, edm::Event& evt, const edm::EventSetu
 		if( !usedSimCluster[ref.key()] ) {
 		  candidate.addElementInBlock(blockRef,elem.index());
 		  usedSimCluster[ref.key()] = true;
+                  cluster_energy_raw+=ref->energy();
+                  cluster_energy_corr+=ref->correctedEnergy();
 		}
 	      }
 	      
@@ -333,6 +340,7 @@ void SimPFProducer::produce(edm::StreamID, edm::Event& evt, const edm::EventSetu
       }
     }
     usedTrack[tkRef.key()] = true;    
+    candidate.setHcalEnergy(cluster_energy_raw, cluster_energy_corr);
     // remove tracks already used by muons
     if( MuonTrackToGeneralTrack.count(itk) || absPdgId == 13)
       candidates->pop_back();
@@ -358,8 +366,8 @@ void SimPFProducer::produce(edm::StreamID, edm::Event& evt, const edm::EventSetu
 	default:
 	  part_type = reco::PFCandidate::h0;
 	}
-	const auto three_mom = (ref->position() - math::XYZPoint(0,0,0)).unit()*ref->energy();
-	math::XYZTLorentzVector clu_p4(three_mom.x(),three_mom.y(),three_mom.z(),ref->energy());
+	const auto three_mom = (ref->position() - math::XYZPoint(0,0,0)).unit()*ref->correctedEnergy();
+	math::XYZTLorentzVector clu_p4(three_mom.x(),three_mom.y(),three_mom.z(),ref->correctedEnergy());
 	candidates->emplace_back(0, clu_p4, part_type);
 	auto& candidate = candidates->back();
 	candidate.addElementInBlock(blref,elem.index());
