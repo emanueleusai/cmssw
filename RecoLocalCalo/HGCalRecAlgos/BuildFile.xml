@@ -1,6 +1,7 @@
 <use   name="clhep"/>
 <use   name="DataFormats/HGCRecHit"/>
 <use   name="root"/>
+<use   name="heppdt"/>
 <use   name="rootminuit"/>
 <use   name="FWCore/MessageLogger"/>
 <use   name="FWCore/ParameterSet"/>
@@ -10,6 +11,19 @@
 <use name="Geometry/HcalTowerAlgo"/>
 <use name="Geometry/Records"/>
 <use name="DataFormats/ParticleFlowReco"/>
+<use   name="DataFormats/CaloRecHit"/>
+<use   name="DataFormats/TrackReco"/>
+<use   name="DataFormats/GeometrySurface"/>
+<use   name="SimDataFormats/CaloAnalysis"/>
+<use   name="CommonTools/UtilAlgos"/>
+<use   name="FastSimulation/Event"/>
+<use   name="FastSimulation/CaloGeometryTools"/>
+<use   name="TrackPropagation/RungeKutta"/>
+<use   name="MagneticField/Engine"/>
+<use   name="TrackingTools/Records"/>
+<use   name="hepmc"/>
+
+
 <export>
   <lib   name="1"/>
 </export>
