@@ -27,6 +27,11 @@
 #include "RecoLocalCalo/HGCalRecAlgos/interface/RecHitTools.h"
 #include "TrackPropagation/RungeKutta/interface/defaultRKPropagator.h"
 #include "DataFormats/GeometrySurface/interface/PlaneBuilder.h"
+#include "FWCore/Framework/interface/ESHandle.h"
+#include "FWCore/Framework/interface/Event.h"
+#include "MagneticField/Engine/interface/MagneticField.h"
+#include "MagneticField/Records/interface/IdealMagneticFieldRecord.h"
+#include "MagneticField/VolumeGeometry/interface/MagVolumeOutsideValidity.h"
 
 // C/C++ headers
 #include <string>
@@ -71,7 +76,9 @@ void getMegaClusters(
 
 private:
 
-const unsigned int maxlayer = 52;
+static constexpr unsigned int maxlayer = 52;
+static constexpr float hgcalOuterRadius_ = 160.;
+static constexpr float hgcalInnerRadius_ = 25.;
 const std::vector<float> energyWeights ={ 1.02, 1.02, 1.02, 1.02, 1.02, 1.02, 1.02, 1.02, 1.02, 1.02, 1.02, 1.02, 
                                           1.02, 1.02, 1.02, 1.02, 1.02, 1.02, 1.02, 1.02, 1.02, 1.02, 1.02, 1.02, 1.02, 1.02, 1.02, 1.02, 
                                           0.86, 0.86, 0.86, 0.86, 0.86, 0.86, 0.86, 0.86, 0.86, 0.86, 0.86, 0.86, 
@@ -89,6 +96,7 @@ bool doPileupSubtraction_;
 FSimEvent *mySimEvent_;
 hgcal::RecHitTools rhtools_;
 std::vector<float> layerPositions_;
+MagneticField const *aField_;
 
 };
 

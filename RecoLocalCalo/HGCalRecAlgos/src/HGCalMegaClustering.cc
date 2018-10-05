@@ -107,6 +107,7 @@ HGCalMegaClustering::HGCalMegaClustering(const edm::ParameterSet& conf, std::str
 
 void HGCalMegaClustering::retrieveLayerPositions(unsigned layers) {
 
+  layerPositions_.clear();
   for (unsigned ilayer = 1; ilayer <= layers; ++ilayer) {
     const GlobalPoint pos = rhtools_.getPositionLayer(ilayer);
     layerPositions_.push_back(pos.z());
@@ -135,6 +136,9 @@ void HGCalMegaClustering::getEventSetup(const edm::EventSetup& es)
   	mySimEvent_->initializePdt(&(*pdt));
   	rhtools_.getEventSetup(es);
   	retrieveLayerPositions(52);
+  	edm::ESHandle<MagneticField> magfield;
+  	es.get<IdealMagneticFieldRecord>().get(magfield);
+  	aField_ = &(*magfield);
 }
 
 void HGCalMegaClustering::getMegaClusters(
@@ -149,19 +153,48 @@ void HGCalMegaClustering::getMegaClusters(
 	const reco::CaloClusterCollection & clusters_)
 {
 
+	std::vector<reco::BasicCluster> megaClusters;
 
   	mySimEvent_->fill(simTracks_, simVertices_);
-
+  	HGCal_helpers::simpleTrackPropagator toHGCalPropagator(aField_);
+  	toHGCalPropagator.setPropagationTargetZ(layerPositions_[0]);
 	std::vector<FSimTrack *> selectedGen;
 	for (unsigned int i = 0; i < mySimEvent_->nTracks()	; ++i) 
 	{
+		//find if the particle has reached EE
+		math::XYZTLorentzVectorD vtx(0, 0, 0, 0);
 		int reachedEE = 0;
 		FSimTrack &myTrack(mySimEvent_->track(i));
 		if (std::abs(myTrack.vertex().position().z()) >= layerPositions_[0]) continue;
-		unsigned nlayers = rhtools_.lastLayerFH();
+		//unsigned nlayers = rhtools_.lastLayerFH();
 		if (myTrack.noEndVertex())  // || myTrack.genpartIndex()>=0)
 		{
+			HGCal_helpers::coordinates propcoords;
+			bool reachesHGCal = toHGCalPropagator.propagate(
+			myTrack.momentum(), myTrack.vertex().position(), myTrack.charge(), propcoords);
+			vtx = propcoords.toVector();
 
+			if (reachesHGCal && vtx.Rho() < hgcalOuterRadius_ && vtx.Rho() > hgcalInnerRadius_)
+			{
+        		reachedEE = 2;
+      		}
+      		else if (reachesHGCal && vtx.Rho() > hgcalOuterRadius_)
+        		reachedEE = 1;
+		}
+		//now skim the particles
+		if (abs(myTrack.type()) == pidSelected_ && reachedEE > 0 &&
+			((gun_type_ == "pt" && myTrack.momentum().pt() >= GEN_engpt_*.999) ||
+			 (gun_type_ != "pt" && myTrack.momentum().energy() >= GEN_engpt_*.999)))
+		{
+			selectedGen.push_back(&myTrack);
+		}
+
+		//return empty collection of there are no multiclusters
+		if (multiClusters_.size()==0)
+			return megaClusters;
+
+		//select multiclusters
+		
 
 
 	}
