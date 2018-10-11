@@ -32,6 +32,7 @@
 #include "MagneticField/Engine/interface/MagneticField.h"
 #include "MagneticField/Records/interface/IdealMagneticFieldRecord.h"
 #include "MagneticField/VolumeGeometry/interface/MagVolumeOutsideValidity.h"
+#include "TVector3.h"
 
 // C/C++ headers
 #include <string>
@@ -60,7 +61,7 @@ void getMegaClusters(
 	const HGCRecHitCollection & recHitsEE_,
 	const HGCRecHitCollection & recHitsFH_,
 	const HGCRecHitCollection & recHitsBH_,
-	const reco::CaloClusterCollection & clusters_);
+	const reco::CaloClusterCollection & layerClusters_);
 
 // void populate();
 // void makeClusters();

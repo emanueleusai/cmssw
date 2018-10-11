@@ -9,6 +9,7 @@
 #include "RecoEcal/EgammaCoreTools/interface/PositionCalc.h"
 //
 #include "DataFormats/CaloRecHit/interface/CaloID.h"
+#include "DataFormats/Math/interface/deltaR.h"
 
 
 namespace HGCal_helpers {
@@ -84,10 +85,43 @@ bool simpleTrackPropagator::propagate(const double px, const double py, const do
 }
 
 bool simpleTrackPropagator::propagate(const math::XYZTLorentzVectorD &momentum,
-                                      const math::XYZTLorentzVectorD &position, const float charge,
+                                      const math::XYZTLorentzVectorD &position, const float &charge,
                                       coordinates &output) const {
   return propagate(momentum.px(), momentum.py(), momentum.pz(), position.x(), position.y(),
                    position.z(), charge, output);
+}
+
+
+std::vector<std::pair<FSimTrack*,reco::HGCalMultiCluster*> > getHighestEnergyObjectIndex(const std::vector<FSimTrack *> & reference, const std::vector<reco::HGCalMultiCluster> & object, const float & deltaR=0.1)
+{
+  std::vector<std::pair<FSimTrack*,reco::HGCalMultiCluster*> > pairings;
+  for (int i=0;i<reference.size(),i++)
+  {
+    int index = -1;
+    float maxenergy = -1.0;
+    for(int j=0;j<object.size(),j++)
+    {
+      if (object[j]->energy()>maxenergy &&
+          reco::deltaR(reference[i],object[j])<deltaR)
+      {
+        index=j;
+        maxenergy=object[j]->energy();
+      }
+    }
+    if (index>-1)
+    {
+      pairings.push_back(std::pair<FSimTrack*,reco::HGCalMultiCluster*>(reference[i],object[index]));
+    }
+  }
+  return pairings;
+}
+
+TVector2 convertToXY(const float & eta, const float & phi, const float & z)
+{
+    t = exp(-1. * eta);
+    x = z * 2. * t * cos(phi) / (1. - t*t);
+    y = z * 2. * t * sin(phi) / (1. - t*t);
+    return TVector2(x,y);
 }
 
 }  // HGCal_helpers
@@ -150,7 +184,7 @@ void HGCalMegaClustering::getMegaClusters(
 	const HGCRecHitCollection & recHitsEE_,
 	const HGCRecHitCollection & recHitsFH_,
 	const HGCRecHitCollection & recHitsBH_,
-	const reco::CaloClusterCollection & clusters_)
+	const reco::CaloClusterCollection & layerClusters_)
 {
 
 	std::vector<reco::BasicCluster> megaClusters;
@@ -194,8 +228,59 @@ void HGCalMegaClustering::getMegaClusters(
 			return megaClusters;
 
 		//select multiclusters
-		
+		std::vector<std::pair<FSimTrack*,reco::HGCalMultiCluster*> > bestMultiClusters;
+    if (GEN_engpt_<=7.5)
+      bestMultiClusters=HGCal_helpers::getHighestEnergyObjectIndex(selectedGen, multiClusters_, 0.2)
+    else
+      bestMultiClusters=HGCal_helpers::getHighestEnergyObjectIndex(selectedGen, multiClusters_, 0.1)
 
+    for (const auto & pair: bestMultiClusters)
+    {
+      float energySum = 0;
+      float pTSum = 0;
+      for (int layer=1; layer<maxlayer+1;layer++)
+      {
+        std::vector<reco::CaloCluster *> selectedLayerClusters;
+        float layer_z = layerPositions_[layer-1];
+        float coneRadius = getConeRadius(frontRadius_, backRadius_, layer_z);
+        TVector2 multiClusPos(HGCal_helpers::convertToXY(pair.second->eta(), pair.second->phi(), layer_z));
+        for (const auto & layerCluster: layerClusters_)
+        {
+          const std::vector<std::pair<DetId, float> > &hf = layerCluster.hitsAndFractions();
+          unsigned hfsize = hf.size();
+          layer_of_the_cluster=0;
+          if (hfsize>0)
+          {
+            layer_of_the_cluster = rhtools_.getLayerWithOffset(hf[0].first);
+          }
+          TVector2 layerClusPos(layerCluster->x(),layerCluster->y());
+          if( layer==layer_of_the_cluster &&
+              layerCluster.eta()*pair.first->eta()>=0 &&
+              (multiClusPos-layerClusPos).Mod()<coneRadius)
+          {
+            associatedRecHits = recHits.iloc[selectedLayerClusters.iloc[layerClusterIndex].rechits]
+                # find maximum energy RecHit
+                maxEnergyRecHitIndex = associatedRecHits['energy'].argmax()
+                # considering only associated RecHits within a radius of energyRadius (6 cm)
+                matchedRecHitIndices = hgcalHelpers.getIndicesWithinRadius(associatedRecHits.loc[[maxEnergyRecHitIndex]][['x', 'y']], associatedRecHits[['x', 'y']], energyRadius)[maxEnergyRecHitIndex]
+                # sum up energies and pT
+                selectedRecHits = associatedRecHits.iloc[matchedRecHitIndices]
+                # correct energy by subdetector weights
+                energySum += selectedRecHits[["energy"]].sum()[0]*energyWeights[layer-1]*1.38
+                pTSum += selectedRecHits[["pt"]].sum()[0]*energyWeights[layer-1]*1.38
+          }
+          
+        }
+
+
+            
+            # mind that we need only the first index since there is only one multiCluster
+            layerClusterIndices = hgcalHelpers.getIndicesWithinRadius(multiClusPosDF[['x', 'y']], selectedLayerClusters[['x', 'y']], coneRadius)
+            # now we need to recalculate the layer cluster energies using associated RecHits
+            for layerClusterIndex in layerClusterIndices[0]:
+
+      }
+    }
 
 	}
 
