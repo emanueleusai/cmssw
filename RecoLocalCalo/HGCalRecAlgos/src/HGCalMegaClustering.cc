@@ -258,26 +258,26 @@ void HGCalMegaClustering::getMegaClusters(
               layerCluster.eta()*pair.first->eta()>=0 &&
               (multiClusPos-layerClusPos).Mod()<coneRadius)
           {
-            associatedRecHits = recHits.iloc[selectedLayerClusters.iloc[layerClusterIndex].rechits]
-                # find maximum energy RecHit
-                maxEnergyRecHitIndex = associatedRecHits['energy'].argmax()
-                # considering only associated RecHits within a radius of energyRadius (6 cm)
-                matchedRecHitIndices = hgcalHelpers.getIndicesWithinRadius(associatedRecHits.loc[[maxEnergyRecHitIndex]][['x', 'y']], associatedRecHits[['x', 'y']], energyRadius)[maxEnergyRecHitIndex]
-                # sum up energies and pT
-                selectedRecHits = associatedRecHits.iloc[matchedRecHitIndices]
-                # correct energy by subdetector weights
-                energySum += selectedRecHits[["energy"]].sum()[0]*energyWeights[layer-1]*1.38
-                pTSum += selectedRecHits[["pt"]].sum()[0]*energyWeights[layer-1]*1.38
+            // associatedRecHits = recHits.iloc[selectedLayerClusters.iloc[layerClusterIndex].rechits]
+            //     # find maximum energy RecHit
+            //     maxEnergyRecHitIndex = associatedRecHits['energy'].argmax()
+            //     # considering only associated RecHits within a radius of energyRadius (6 cm)
+            //     matchedRecHitIndices = hgcalHelpers.getIndicesWithinRadius(associatedRecHits.loc[[maxEnergyRecHitIndex]][['x', 'y']], associatedRecHits[['x', 'y']], energyRadius)[maxEnergyRecHitIndex]
+            //     # sum up energies and pT
+            //     selectedRecHits = associatedRecHits.iloc[matchedRecHitIndices]
+            //     # correct energy by subdetector weights
+            //     energySum += selectedRecHits[["energy"]].sum()[0]*energyWeights[layer-1]*1.38
+            //     pTSum += selectedRecHits[["pt"]].sum()[0]*energyWeights[layer-1]*1.38
           }
           
         }
 
 
             
-            # mind that we need only the first index since there is only one multiCluster
-            layerClusterIndices = hgcalHelpers.getIndicesWithinRadius(multiClusPosDF[['x', 'y']], selectedLayerClusters[['x', 'y']], coneRadius)
-            # now we need to recalculate the layer cluster energies using associated RecHits
-            for layerClusterIndex in layerClusterIndices[0]:
+            // # mind that we need only the first index since there is only one multiCluster
+            // layerClusterIndices = hgcalHelpers.getIndicesWithinRadius(multiClusPosDF[['x', 'y']], selectedLayerClusters[['x', 'y']], coneRadius)
+            // # now we need to recalculate the layer cluster energies using associated RecHits
+            // for layerClusterIndex in layerClusterIndices[0]:
 
       }
     }
