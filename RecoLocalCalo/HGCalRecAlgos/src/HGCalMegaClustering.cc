@@ -126,7 +126,6 @@ TVector2 convertToXY(const float & eta, const float & phi, const float & z)
 
 }  // HGCal_helpers
 
-
 HGCalMegaClustering::HGCalMegaClustering(const edm::ParameterSet& conf, std::string gun_type, float GEN_engpt, int pidSelected, int energyRadius, int frontRadius, int backRadius, bool doPileupSubtraction)
 {
 	gun_type_ = gun_type; 
@@ -175,23 +174,54 @@ void HGCalMegaClustering::getEventSetup(const edm::EventSetup& es)
   	aField_ = &(*magfield);
 }
 
+
+std::pair<float,float> pileupSubtraction(
+  const std::pair<FSimTrack*,reco::HGCalMultiCluster*>& matchedMultiCluster, 
+  const std::vector<reco::CaloCluster *>& selectedLayerClusters, 
+  int layer, 
+  float energyRadius, 
+  float frontRadius, 
+  float backRadius)
+{
+  
+}
+
 void HGCalMegaClustering::getMegaClusters(
 
-  	const std::vector<SimTrack> & simTracks_,
-  	const std::vector<SimVertex> & simVertices_,
+  const std::vector<SimTrack> & simTracks_,
+  const std::vector<SimVertex> & simVertices_,
 	//const std::vector<reco::GenParticle> & genParticles_,
 	const std::vector<reco::HGCalMultiCluster> & multiClusters_,
 	const HGCRecHitCollection & recHitsEE_,
 	const HGCRecHitCollection & recHitsFH_,
 	const HGCRecHitCollection & recHitsBH_,
-	const reco::CaloClusterCollection & layerClusters_)
+	const reco::CaloClusterCollection & layerClusters_,
+  const edm::HepMCProduct & hepmc_)
 {
+
+  HepMC::GenVertex *primaryVertex = *(hepmc_)->GetEvent()->vertices_begin();
+  vz_ = primaryVertex->position().z() / 10.;
+
+
+  hitmap_.clear();
+  for (unsigned int i = 0; i < rechitsEE.size(); ++i)
+  {
+    hitmap_[rechitsEE[i].detid()] = &rechitsEE[i];
+  }
+  for (unsigned int i = 0; i < rechitsFH.size(); ++i)
+  {
+    hitmap_[rechitsFH[i].detid()] = &rechitsFH[i];
+  }
+  for (unsigned int i = 0; i < rechitsBH.size(); ++i)
+  {
+    hitmap_[rechitsBH[i].detid()] = &rechitsBH[i];
+  }
 
 	std::vector<reco::BasicCluster> megaClusters;
 
-  	mySimEvent_->fill(simTracks_, simVertices_);
-  	HGCal_helpers::simpleTrackPropagator toHGCalPropagator(aField_);
-  	toHGCalPropagator.setPropagationTargetZ(layerPositions_[0]);
+  mySimEvent_->fill(simTracks_, simVertices_);
+  HGCal_helpers::simpleTrackPropagator toHGCalPropagator(aField_);
+  toHGCalPropagator.setPropagationTargetZ(layerPositions_[0]);
 	std::vector<FSimTrack *> selectedGen;
 	for (unsigned int i = 0; i < mySimEvent_->nTracks()	; ++i) 
 	{
@@ -211,8 +241,8 @@ void HGCalMegaClustering::getMegaClusters(
 			if (reachesHGCal && vtx.Rho() < hgcalOuterRadius_ && vtx.Rho() > hgcalInnerRadius_)
 			{
         		reachedEE = 2;
-      		}
-      		else if (reachesHGCal && vtx.Rho() > hgcalOuterRadius_)
+      }
+      else if (reachesHGCal && vtx.Rho() > hgcalOuterRadius_)
         		reachedEE = 1;
 		}
 		//now skim the particles
@@ -222,6 +252,7 @@ void HGCalMegaClustering::getMegaClusters(
 		{
 			selectedGen.push_back(&myTrack);
 		}
+  }// loop over sim particles
 
 		//return empty collection of there are no multiclusters
 		if (multiClusters_.size()==0)
@@ -236,6 +267,7 @@ void HGCalMegaClustering::getMegaClusters(
 
     for (const auto & pair: bestMultiClusters)
     {
+      float max_rechit_energy=-1;
       float energySum = 0;
       float pTSum = 0;
       for (int layer=1; layer<maxlayer+1;layer++)
@@ -258,31 +290,52 @@ void HGCalMegaClustering::getMegaClusters(
               layerCluster.eta()*pair.first->eta()>=0 &&
               (multiClusPos-layerClusPos).Mod()<coneRadius)
           {
-            // associatedRecHits = recHits.iloc[selectedLayerClusters.iloc[layerClusterIndex].rechits]
-            //     # find maximum energy RecHit
-            //     maxEnergyRecHitIndex = associatedRecHits['energy'].argmax()
-            //     # considering only associated RecHits within a radius of energyRadius (6 cm)
-            //     matchedRecHitIndices = hgcalHelpers.getIndicesWithinRadius(associatedRecHits.loc[[maxEnergyRecHitIndex]][['x', 'y']], associatedRecHits[['x', 'y']], energyRadius)[maxEnergyRecHitIndex]
-            //     # sum up energies and pT
-            //     selectedRecHits = associatedRecHits.iloc[matchedRecHitIndices]
-            //     # correct energy by subdetector weights
-            //     energySum += selectedRecHits[["energy"]].sum()[0]*energyWeights[layer-1]*1.38
-            //     pTSum += selectedRecHits[["pt"]].sum()[0]*energyWeights[layer-1]*1.38
-          }
-          
+            DetId highest_energy_rh;
+            float highest_energy=-1;
+            //find most energetic cluster
+            for (const auto & rh_pair: hf)
+            {
+              float hit_energy = hitmap_[rh_pair.first]->energy();
+              if (hit_energy>highest_energy)
+              {
+                highest_energy=hit_energy;
+                highest_energy_rh = rh_pair.first;
+              }
+            }//rh loop
+            if (highest_energy>0)
+            {
+              GlobalPoint highest_energy_gp = rhtools_.getPosition(highest_energy_rh);
+              TVector2 highest_energy_pos(position->x(),position->y());
+              for (const auto & rh_pair: hf)
+              {
+                GlobalPoint gp = rhtools_.getPosition(rh_pair.first);
+                TVector2 rh_pos(gp.x(),gp.y());
+                if((highest_energy_pos-rh_pos).Mod()<energyRadius_)
+                {
+                  float hit_energy = hitmap_[rh_pair.first]->energy();
+                  energySum+= hit_energy*energyWeights[layer-1]*1.38;
+                  pTSum+= rhtools_.getPt(gp, hit_energy, vz_)*energyWeights[layer-1]*1.38;
+                }
+              }//rh loop
+            }
+          }// good layer cluster if       
+        }//layer cluster loop
+        if(doPileupSubtraction_)
+        {
+          (pu_energySum, pu_pTSum) = pileupSubtraction(matchedMultiCluster, selectedLayerClusters, recHits, layer, energyRadius, frontRadius, backRadius)
+                energySum -= pu_energySum
+                pTSum -= pu_pTSum
         }
-
-
             
             // # mind that we need only the first index since there is only one multiCluster
             // layerClusterIndices = hgcalHelpers.getIndicesWithinRadius(multiClusPosDF[['x', 'y']], selectedLayerClusters[['x', 'y']], coneRadius)
             // # now we need to recalculate the layer cluster energies using associated RecHits
             // for layerClusterIndex in layerClusterIndices[0]:
 
-      }
-    }
+      }//loop over layers
+    }//loop over multiclusters -- sim particle pairs
 
-	}
+	}//getMegaClusters
 
 
 

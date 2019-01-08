@@ -33,6 +33,7 @@
 #include "MagneticField/Records/interface/IdealMagneticFieldRecord.h"
 #include "MagneticField/VolumeGeometry/interface/MagVolumeOutsideValidity.h"
 #include "TVector3.h"
+#include "SimDataFormats/GeneratorProducts/interface/HepMCProduct.h"
 
 // C/C++ headers
 #include <string>
@@ -61,7 +62,8 @@ void getMegaClusters(
 	const HGCRecHitCollection & recHitsEE_,
 	const HGCRecHitCollection & recHitsFH_,
 	const HGCRecHitCollection & recHitsBH_,
-	const reco::CaloClusterCollection & layerClusters_);
+	const reco::CaloClusterCollection & layerClusters_,
+  	const edm::HepMCProduct & hepmc_);
 
 // void populate();
 // void makeClusters();
@@ -70,12 +72,15 @@ void getMegaClusters(
 // void getEventSetup();
 // void reset();
 
-
-
-
-
-
 private:
+
+std::pair<float,float> pileupSubtraction(
+	const std::pair<FSimTrack*,reco::HGCalMultiCluster*>& matchedMultiCluster, 
+	const std::vector<reco::CaloCluster *>& selectedLayerClusters, 
+	int layer, 
+	float energyRadius, 
+	float frontRadius, 
+	float backRadius);
 
 static constexpr unsigned int maxlayer = 52;
 static constexpr float hgcalOuterRadius_ = 160.;
@@ -98,6 +103,8 @@ FSimEvent *mySimEvent_;
 hgcal::RecHitTools rhtools_;
 std::vector<float> layerPositions_;
 MagneticField const *aField_;
+std::map<DetId, const HGCRecHit *> hitmap_;
+float vz_;
 
 };
 
