@@ -55,7 +55,7 @@ virtual ~HGCalMegaClustering(){}
 
 void getEventSetup(const edm::EventSetup& es);
 
-void getMegaClusters(
+std::vector<std::pair<reco::BasicCluster,float> > getMegaClusters(
 	const std::vector<SimTrack> & simTracks_,
   	const std::vector<SimVertex> & simVertices_,
 	const std::vector<reco::HGCalMultiCluster> & multiClusters_,
@@ -77,10 +77,7 @@ private:
 std::pair<float,float> pileupSubtraction(
 	const std::pair<FSimTrack*,reco::HGCalMultiCluster*>& matchedMultiCluster, 
 	const std::vector<reco::CaloCluster *>& selectedLayerClusters, 
-	int layer, 
-	float energyRadius, 
-	float frontRadius, 
-	float backRadius);
+	int layer);
 
 static constexpr unsigned int maxlayer = 52;
 static constexpr float hgcalOuterRadius_ = 160.;

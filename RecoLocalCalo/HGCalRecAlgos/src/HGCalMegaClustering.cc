@@ -175,18 +175,61 @@ void HGCalMegaClustering::getEventSetup(const edm::EventSetup& es)
 }
 
 
-std::pair<float,float> pileupSubtraction(
+std::pair<float,float> HGCalMegaClustering::pileupSubtraction(
   const std::pair<FSimTrack*,reco::HGCalMultiCluster*>& matchedMultiCluster, 
   const std::vector<reco::CaloCluster *>& selectedLayerClusters, 
-  int layer, 
-  float energyRadius, 
-  float frontRadius, 
-  float backRadius)
+  int layer)
 {
-  
+  float pTSum = 0;
+  float energySum = 0;
+  auto layer_z = layerPositions_[layer-1];
+  //get multi cluster x and y coordinates
+  float matchedMultiCluster_phi = matchedMultiCluster.second.phi() - M_PI;
+  if (matchedMultiCluster_phi < -M_PI)
+    matchedMultiCluster_phi += 2*M_PI;
+  TVector2 multiClusPos(HGCal_helpers::convertToXY(matchedMultiCluster.second.eta(), matchedMultiCluster_phi, layer_z));
+  //calculate radius based on current layer's z position
+  auto coneRadius = getConeRadius(frontRadius_, backRadius_, layer_z);
+  for (const auto & layerCluster: selectedLayerClusters)
+  {
+    TVector2 layerClusPos(layerCluster->x(),layerCluster->y());
+    if((multiClusPos-layerClusPos).Mod()<coneRadius)
+    {
+      const std::vector<std::pair<DetId, float> > &hf = layerCluster.hitsAndFractions();
+      DetId highest_energy_rh;
+      float highest_energy=-1;
+      //find most energetic cluster
+      for (const auto & rh_pair: hf)
+      {
+        auto hit_energy = hitmap_[rh_pair.first]->energy();
+        if (hit_energy>highest_energy)
+        {
+          highest_energy=hit_energy;
+          highest_energy_rh = rh_pair.first;
+        }
+      }//rh loop
+      if (highest_energy>0)
+      {
+        auto highest_energy_gp = rhtools_.getPosition(highest_energy_rh);
+        TVector2 highest_energy_pos(position->x(),position->y());
+        for (const auto & rh_pair: hf)
+        {
+          auto gp = rhtools_.getPosition(rh_pair.first);
+          TVector2 rh_pos(gp.x(),gp.y());
+          if((highest_energy_pos-rh_pos).Mod()<energyRadius_)
+          {
+            auto hit_energy = hitmap_[rh_pair.first]->energy();
+            energySum+= hit_energy*energyWeights[layer-1]*1.38;
+            pTSum+= rhtools_.getPt(gp, hit_energy, vz_)*energyWeights[layer-1]*1.38;
+          }
+        }//rh loop
+      }
+    }// good layer cluster if 
+  }
+  return std::pair<float,float>(energySum,pTSum);
 }
 
-void HGCalMegaClustering::getMegaClusters(
+std::vector<std::pair<reco::BasicCluster,float> > HGCalMegaClustering::getMegaClusters(
 
   const std::vector<SimTrack> & simTracks_,
   const std::vector<SimVertex> & simVertices_,
@@ -202,6 +245,7 @@ void HGCalMegaClustering::getMegaClusters(
   HepMC::GenVertex *primaryVertex = *(hepmc_)->GetEvent()->vertices_begin();
   vz_ = primaryVertex->position().z() / 10.;
 
+  std::vector<std::pair<reco::BasicCluster,float> > tmp_clusters;
 
   hitmap_.clear();
   for (unsigned int i = 0; i < rechitsEE.size(); ++i)
@@ -234,7 +278,7 @@ void HGCalMegaClustering::getMegaClusters(
 		if (myTrack.noEndVertex())  // || myTrack.genpartIndex()>=0)
 		{
 			HGCal_helpers::coordinates propcoords;
-			bool reachesHGCal = toHGCalPropagator.propagate(
+			auto reachesHGCal = toHGCalPropagator.propagate(
 			myTrack.momentum(), myTrack.vertex().position(), myTrack.charge(), propcoords);
 			vtx = propcoords.toVector();
 
@@ -273,29 +317,32 @@ void HGCalMegaClustering::getMegaClusters(
       for (int layer=1; layer<maxlayer+1;layer++)
       {
         std::vector<reco::CaloCluster *> selectedLayerClusters;
-        float layer_z = layerPositions_[layer-1];
-        float coneRadius = getConeRadius(frontRadius_, backRadius_, layer_z);
+        auto layer_z = layerPositions_[layer-1];
+        auto coneRadius = getConeRadius(frontRadius_, backRadius_, layer_z);
         TVector2 multiClusPos(HGCal_helpers::convertToXY(pair.second->eta(), pair.second->phi(), layer_z));
         for (const auto & layerCluster: layerClusters_)
         {
           const std::vector<std::pair<DetId, float> > &hf = layerCluster.hitsAndFractions();
-          unsigned hfsize = hf.size();
+          auto hfsize = hf.size();
           layer_of_the_cluster=0;
           if (hfsize>0)
           {
             layer_of_the_cluster = rhtools_.getLayerWithOffset(hf[0].first);
           }
           TVector2 layerClusPos(layerCluster->x(),layerCluster->y());
-          if( layer==layer_of_the_cluster &&
-              layerCluster.eta()*pair.first->eta()>=0 &&
-              (multiClusPos-layerClusPos).Mod()<coneRadius)
+          if(layer==layer_of_the_cluster && layerCluster.eta()*pair.first->eta()>=0)
+          {
+            selectedLayerClusters.push_back(&layerCluster);
+          }
+          else continue;
+          if((multiClusPos-layerClusPos).Mod()<coneRadius)
           {
             DetId highest_energy_rh;
             float highest_energy=-1;
             //find most energetic cluster
             for (const auto & rh_pair: hf)
             {
-              float hit_energy = hitmap_[rh_pair.first]->energy();
+              auto hit_energy = hitmap_[rh_pair.first]->energy();
               if (hit_energy>highest_energy)
               {
                 highest_energy=hit_energy;
@@ -304,15 +351,15 @@ void HGCalMegaClustering::getMegaClusters(
             }//rh loop
             if (highest_energy>0)
             {
-              GlobalPoint highest_energy_gp = rhtools_.getPosition(highest_energy_rh);
+              auto highest_energy_gp = rhtools_.getPosition(highest_energy_rh);
               TVector2 highest_energy_pos(position->x(),position->y());
               for (const auto & rh_pair: hf)
               {
-                GlobalPoint gp = rhtools_.getPosition(rh_pair.first);
+                auto gp = rhtools_.getPosition(rh_pair.first);
                 TVector2 rh_pos(gp.x(),gp.y());
                 if((highest_energy_pos-rh_pos).Mod()<energyRadius_)
                 {
-                  float hit_energy = hitmap_[rh_pair.first]->energy();
+                  auto hit_energy = hitmap_[rh_pair.first]->energy();
                   energySum+= hit_energy*energyWeights[layer-1]*1.38;
                   pTSum+= rhtools_.getPt(gp, hit_energy, vz_)*energyWeights[layer-1]*1.38;
                 }
@@ -322,78 +369,17 @@ void HGCalMegaClustering::getMegaClusters(
         }//layer cluster loop
         if(doPileupSubtraction_)
         {
-          (pu_energySum, pu_pTSum) = pileupSubtraction(matchedMultiCluster, selectedLayerClusters, recHits, layer, energyRadius, frontRadius, backRadius)
-                energySum -= pu_energySum
-                pTSum -= pu_pTSum
+          auto pileup_quantities = pileupSubtraction(pair, selectedLayerClusters, layer);
+          energySum -= pileup_quantities.first;
+          pTSum -= pileup_quantities.second;
         }
-            
-            // # mind that we need only the first index since there is only one multiCluster
-            // layerClusterIndices = hgcalHelpers.getIndicesWithinRadius(multiClusPosDF[['x', 'y']], selectedLayerClusters[['x', 'y']], coneRadius)
-            // # now we need to recalculate the layer cluster energies using associated RecHits
-            // for layerClusterIndex in layerClusterIndices[0]:
-
       }//loop over layers
+      reco::BasicCluster tmp_bc(energySum,pair.second->position(),reco::CaloID::DET_HGCAL_ENDCAP);
+      tmp_clusters.emplace_back(tmp_bc,pTSum);
     }//loop over multiclusters -- sim particle pairs
-
+    return tmp_clusters;
 	}//getMegaClusters
 
-
-
-
-		
-  //     HGCal_helpers::coordinates propcoords;
-  //     bool reachesHGCal = toHGCalPropagator.propagate(
-  //         myTrack.momentum(), myTrack.vertex().position(), myTrack.charge(), propcoords);
-  //     vtx = propcoords.toVector();
-
-  //     if (reachesHGCal && vtx.Rho() < hgcalOuterRadius_ && vtx.Rho() > hgcalInnerRadius_) {
-  //       reachedEE = 2;
-  //       double dpt = 0;
-
-  //       for (int i = 0; i < myTrack.nDaughters(); ++i) dpt += myTrack.daughter(i).momentum().pt();
-  //       if (abs(myTrack.type()) == 11) fbrem = dpt / myTrack.momentum().pt();
-  //     } else if (reachesHGCal && vtx.Rho() > hgcalOuterRadius_)
-  //       reachedEE = 1;
-
-  //     HGCal_helpers::simpleTrackPropagator indiv_particleProp(aField_);
-  //     for (unsigned il = 0; il < nlayers; ++il) {
-  //       const float charge = myTrack.charge();
-  //       indiv_particleProp.setPropagationTargetZ(layerPositions_[il]);
-  //       HGCal_helpers::coordinates propCoords;
-  //       indiv_particleProp.propagate(myTrack.momentum(), myTrack.vertex().position(), charge,
-  //                                    propCoords);
-
-  //       xp.push_back(propCoords.x);
-  //       yp.push_back(propCoords.y);
-  //       zp.push_back(propCoords.z);
-  //     }
-  //   } else {
-  //     vtx = myTrack.endVertex().position();
-  //   }
-
-
-
-
-
-
-
-
-
-
-
-
-	// }
-
-	// unsigned int npart = mySimEvent_->nTracks();
- //  for (unsigned int i = 0; i < npart; ++i) {
-
-
-	// selectedGen = genParticles[(abs(genParticles.pid) == pidSelected) & (genParticles.reachedEE > 0)]
- //    if gun_type == "pt":
- //        selectedGen = selectedGen[(selectedGen.pt >= GEN_engpt*.999)]
- //    else:
- //        selectedGen = selectedGen[(selectedGen.energy >= GEN_engpt*.999)]
-}
 
 // void HGCalMegaClustering::populate()
 // {
