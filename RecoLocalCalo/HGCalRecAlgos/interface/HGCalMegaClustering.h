@@ -75,8 +75,8 @@ std::vector<std::pair<reco::BasicCluster,float> > getMegaClusters(
 private:
 
 std::pair<float,float> pileupSubtraction(
-	const std::pair<FSimTrack*,reco::HGCalMultiCluster*>& matchedMultiCluster, 
-	const std::vector<reco::CaloCluster *>& selectedLayerClusters, 
+	const std::pair<const FSimTrack*,const reco::HGCalMultiCluster*>& matchedMultiCluster, 
+	const std::vector<const reco::CaloCluster *>& selectedLayerClusters, 
 	int layer);
 
 static constexpr unsigned int maxlayer = 52;

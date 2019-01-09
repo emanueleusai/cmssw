@@ -32,10 +32,10 @@ class simpleTrackPropagator {
   void setPropagationTargetZ(const float &z);
 
   bool propagate(const double px, const double py, const double pz, const double x, const double y,
-                 const double z, const float charge, coordinates &coords) const;
+                 const double z, const float charge, coordinates &output) const;
 
   bool propagate(const math::XYZTLorentzVectorD &momentum, const math::XYZTLorentzVectorD &position,
-                 const float charge, coordinates &coords) const;
+                 const float charge, coordinates &output) const;
 
  private:
   simpleTrackPropagator() : field_(0), prod_(field_, alongMomentum, 5.e-5), absz_target_(0) {}
@@ -85,32 +85,32 @@ bool simpleTrackPropagator::propagate(const double px, const double py, const do
 }
 
 bool simpleTrackPropagator::propagate(const math::XYZTLorentzVectorD &momentum,
-                                      const math::XYZTLorentzVectorD &position, const float &charge,
+                                      const math::XYZTLorentzVectorD &position, const float charge,
                                       coordinates &output) const {
   return propagate(momentum.px(), momentum.py(), momentum.pz(), position.x(), position.y(),
                    position.z(), charge, output);
 }
 
 
-std::vector<std::pair<FSimTrack*,reco::HGCalMultiCluster*> > getHighestEnergyObjectIndex(const std::vector<FSimTrack *> & reference, const std::vector<reco::HGCalMultiCluster> & object, const float & deltaR=0.1)
+std::vector<std::pair<const FSimTrack*,const reco::HGCalMultiCluster*> > getHighestEnergyObjectIndex(const std::vector<FSimTrack *> & reference, const std::vector<reco::HGCalMultiCluster> & object, const float & deltaR=0.1)
 {
-  std::vector<std::pair<FSimTrack*,reco::HGCalMultiCluster*> > pairings;
-  for (int i=0;i<reference.size(),i++)
+  std::vector<std::pair<const FSimTrack*,const reco::HGCalMultiCluster*> > pairings;
+  for (unsigned int i=0;i<reference.size();i++)
   {
     int index = -1;
     float maxenergy = -1.0;
-    for(int j=0;j<object.size(),j++)
+    for(unsigned int j=0;j<object.size();j++)
     {
-      if (object[j]->energy()>maxenergy &&
-          reco::deltaR(reference[i],object[j])<deltaR)
+      if (object[j].energy()>maxenergy &&
+          reco::deltaR<math::XYZTLorentzVectorD,reco::HGCalMultiCluster>(reference[i]->momentum(),object[j])<deltaR)
       {
         index=j;
-        maxenergy=object[j]->energy();
+        maxenergy=object[j].energy();
       }
     }
     if (index>-1)
     {
-      pairings.push_back(std::pair<FSimTrack*,reco::HGCalMultiCluster*>(reference[i],object[index]));
+      pairings.emplace_back(reference[i],&object[index]);
     }
   }
   return pairings;
@@ -118,9 +118,9 @@ std::vector<std::pair<FSimTrack*,reco::HGCalMultiCluster*> > getHighestEnergyObj
 
 TVector2 convertToXY(const float & eta, const float & phi, const float & z)
 {
-    t = exp(-1. * eta);
-    x = z * 2. * t * cos(phi) / (1. - t*t);
-    y = z * 2. * t * sin(phi) / (1. - t*t);
+    auto t = exp(-1. * eta);
+    auto x = z * 2. * t * cos(phi) / (1. - t*t);
+    auto y = z * 2. * t * sin(phi) / (1. - t*t);
     return TVector2(x,y);
 }
 
@@ -176,18 +176,18 @@ void HGCalMegaClustering::getEventSetup(const edm::EventSetup& es)
 
 
 std::pair<float,float> HGCalMegaClustering::pileupSubtraction(
-  const std::pair<FSimTrack*,reco::HGCalMultiCluster*>& matchedMultiCluster, 
-  const std::vector<reco::CaloCluster *>& selectedLayerClusters, 
+  const std::pair<const FSimTrack*,const reco::HGCalMultiCluster*>& matchedMultiCluster, 
+  const std::vector<const reco::CaloCluster *>& selectedLayerClusters, 
   int layer)
 {
   float pTSum = 0;
   float energySum = 0;
   auto layer_z = layerPositions_[layer-1];
   //get multi cluster x and y coordinates
-  float matchedMultiCluster_phi = matchedMultiCluster.second.phi() - M_PI;
+  float matchedMultiCluster_phi = matchedMultiCluster.second->phi() - M_PI;
   if (matchedMultiCluster_phi < -M_PI)
     matchedMultiCluster_phi += 2*M_PI;
-  TVector2 multiClusPos(HGCal_helpers::convertToXY(matchedMultiCluster.second.eta(), matchedMultiCluster_phi, layer_z));
+  TVector2 multiClusPos(HGCal_helpers::convertToXY(matchedMultiCluster.second->eta(), matchedMultiCluster_phi, layer_z));
   //calculate radius based on current layer's z position
   auto coneRadius = getConeRadius(frontRadius_, backRadius_, layer_z);
   for (const auto & layerCluster: selectedLayerClusters)
@@ -195,7 +195,7 @@ std::pair<float,float> HGCalMegaClustering::pileupSubtraction(
     TVector2 layerClusPos(layerCluster->x(),layerCluster->y());
     if((multiClusPos-layerClusPos).Mod()<coneRadius)
     {
-      const std::vector<std::pair<DetId, float> > &hf = layerCluster.hitsAndFractions();
+      const std::vector<std::pair<DetId, float> > &hf = layerCluster->hitsAndFractions();
       DetId highest_energy_rh;
       float highest_energy=-1;
       //find most energetic cluster
@@ -211,7 +211,7 @@ std::pair<float,float> HGCalMegaClustering::pileupSubtraction(
       if (highest_energy>0)
       {
         auto highest_energy_gp = rhtools_.getPosition(highest_energy_rh);
-        TVector2 highest_energy_pos(position->x(),position->y());
+        TVector2 highest_energy_pos(highest_energy_gp.x(),highest_energy_gp.y());
         for (const auto & rh_pair: hf)
         {
           auto gp = rhtools_.getPosition(rh_pair.first);
@@ -230,7 +230,6 @@ std::pair<float,float> HGCalMegaClustering::pileupSubtraction(
 }
 
 std::vector<std::pair<reco::BasicCluster,float> > HGCalMegaClustering::getMegaClusters(
-
   const std::vector<SimTrack> & simTracks_,
   const std::vector<SimVertex> & simVertices_,
 	//const std::vector<reco::GenParticle> & genParticles_,
@@ -242,26 +241,26 @@ std::vector<std::pair<reco::BasicCluster,float> > HGCalMegaClustering::getMegaCl
   const edm::HepMCProduct & hepmc_)
 {
 
-  HepMC::GenVertex *primaryVertex = *(hepmc_)->GetEvent()->vertices_begin();
-  vz_ = primaryVertex->position().z() / 10.;
+  auto primaryVertex = hepmc_.GetEvent()->vertices_begin();
+  vz_ = (*primaryVertex)->position().z() / 10.;
 
   std::vector<std::pair<reco::BasicCluster,float> > tmp_clusters;
 
   hitmap_.clear();
-  for (unsigned int i = 0; i < rechitsEE.size(); ++i)
+  for (unsigned int i = 0; i < recHitsEE_.size(); ++i)
   {
-    hitmap_[rechitsEE[i].detid()] = &rechitsEE[i];
+    hitmap_[recHitsEE_[i].detid()] = &recHitsEE_[i];
   }
-  for (unsigned int i = 0; i < rechitsFH.size(); ++i)
+  for (unsigned int i = 0; i < recHitsFH_.size(); ++i)
   {
-    hitmap_[rechitsFH[i].detid()] = &rechitsFH[i];
+    hitmap_[recHitsFH_[i].detid()] = &recHitsFH_[i];
   }
-  for (unsigned int i = 0; i < rechitsBH.size(); ++i)
+  for (unsigned int i = 0; i < recHitsBH_.size(); ++i)
   {
-    hitmap_[rechitsBH[i].detid()] = &rechitsBH[i];
+    hitmap_[recHitsBH_[i].detid()] = &recHitsBH_[i];
   }
 
-	std::vector<reco::BasicCluster> megaClusters;
+	//std::vector<reco::BasicCluster> megaClusters;
 
   mySimEvent_->fill(simTracks_, simVertices_);
   HGCal_helpers::simpleTrackPropagator toHGCalPropagator(aField_);
@@ -300,23 +299,23 @@ std::vector<std::pair<reco::BasicCluster,float> > HGCalMegaClustering::getMegaCl
 
 		//return empty collection of there are no multiclusters
 		if (multiClusters_.size()==0)
-			return megaClusters;
+			return tmp_clusters;
 
 		//select multiclusters
-		std::vector<std::pair<FSimTrack*,reco::HGCalMultiCluster*> > bestMultiClusters;
+		std::vector<std::pair<const FSimTrack*,const reco::HGCalMultiCluster*> > bestMultiClusters;
     if (GEN_engpt_<=7.5)
-      bestMultiClusters=HGCal_helpers::getHighestEnergyObjectIndex(selectedGen, multiClusters_, 0.2)
+      bestMultiClusters=HGCal_helpers::getHighestEnergyObjectIndex(selectedGen, multiClusters_, 0.2);
     else
-      bestMultiClusters=HGCal_helpers::getHighestEnergyObjectIndex(selectedGen, multiClusters_, 0.1)
+      bestMultiClusters=HGCal_helpers::getHighestEnergyObjectIndex(selectedGen, multiClusters_, 0.1);
 
     for (const auto & pair: bestMultiClusters)
     {
-      float max_rechit_energy=-1;
+      //float max_rechit_energy=-1;
       float energySum = 0;
       float pTSum = 0;
-      for (int layer=1; layer<maxlayer+1;layer++)
+      for (unsigned int layer=1; layer<maxlayer+1;layer++)
       {
-        std::vector<reco::CaloCluster *> selectedLayerClusters;
+        std::vector<const reco::CaloCluster *> selectedLayerClusters;
         auto layer_z = layerPositions_[layer-1];
         auto coneRadius = getConeRadius(frontRadius_, backRadius_, layer_z);
         TVector2 multiClusPos(HGCal_helpers::convertToXY(pair.second->eta(), pair.second->phi(), layer_z));
@@ -324,13 +323,13 @@ std::vector<std::pair<reco::BasicCluster,float> > HGCalMegaClustering::getMegaCl
         {
           const std::vector<std::pair<DetId, float> > &hf = layerCluster.hitsAndFractions();
           auto hfsize = hf.size();
-          layer_of_the_cluster=0;
+          unsigned int layer_of_the_cluster=0;
           if (hfsize>0)
           {
             layer_of_the_cluster = rhtools_.getLayerWithOffset(hf[0].first);
           }
-          TVector2 layerClusPos(layerCluster->x(),layerCluster->y());
-          if(layer==layer_of_the_cluster && layerCluster.eta()*pair.first->eta()>=0)
+          TVector2 layerClusPos(layerCluster.x(),layerCluster.y());
+          if(layer==layer_of_the_cluster && layerCluster.eta()*pair.first->momentum().eta()>=0)
           {
             selectedLayerClusters.push_back(&layerCluster);
           }
@@ -352,7 +351,7 @@ std::vector<std::pair<reco::BasicCluster,float> > HGCalMegaClustering::getMegaCl
             if (highest_energy>0)
             {
               auto highest_energy_gp = rhtools_.getPosition(highest_energy_rh);
-              TVector2 highest_energy_pos(position->x(),position->y());
+              TVector2 highest_energy_pos(highest_energy_gp.x(),highest_energy_gp.y());
               for (const auto & rh_pair: hf)
               {
                 auto gp = rhtools_.getPosition(rh_pair.first);
